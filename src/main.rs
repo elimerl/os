@@ -15,12 +15,13 @@ mod interrupts;
 mod memory;
 mod pit;
 mod writer;
-use ::vga::vga;
+use ::vga::{colors::Color16, vga};
 use bootloader::BootInfo;
 use core::panic::PanicInfo;
+use writer::init_cursor;
 use x86_64::VirtAddr;
 
-use crate::memory::BootInfoFrameAllocator;
+use crate::{memory::BootInfoFrameAllocator, writer::set_fg_color};
 /// This function is called on panic.
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -30,9 +31,21 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
+    set_fg_color(Color16::LightGreen);
+    println!(
+        r"
+d88888b db      d888888b  .d88b.  .d8888. 
+88'     88        `88'   .8P  Y8. 88'  YP 
+88ooooo 88         88    88    88 `8bo.   
+88~~~~~ 88         88    88    88   `Y8b. 
+88.     88booo.   .88.   `8b  d8' db   8D 
+Y88888P Y88888P Y888888P  `Y88P'  `8888Y' 
+"
+    );
+    set_fg_color(Color16::White);
+    println!("Initializing core...");
     init(boot_info);
-    println!("Hello from os code!");
-    println!("Halting kernel...");
+    println!("Initialized!");
     hlt_loop();
 }
 pub fn hlt_loop() -> ! {
@@ -55,4 +68,5 @@ pub fn init(boot_info: &'static BootInfo) {
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
+    init_cursor();
 }

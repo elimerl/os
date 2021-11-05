@@ -1,7 +1,9 @@
+use core::sync::atomic::{AtomicU64, Ordering};
+
 use crate::{gdt, hlt_loop, print, println, writer};
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
-use spin;
+use spin::{self, Mutex};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 pub const PIC_1_OFFSET: u8 = 32;
@@ -70,8 +72,16 @@ extern "x86-interrupt" fn double_fault_handler(
 ) -> ! {
     panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
 }
+pub static TIMER_INTERRUPT_COUNTER: AtomicU64 = AtomicU64::new(0);
+lazy_static! {
+    static ref TIMER_INTERRUPT_HANDLER: Mutex<fn(u64) -> ()> = Mutex::new(|i| {});
+}
+pub fn register_timer_handler(handler: fn(u64) -> ()) {
+    *TIMER_INTERRUPT_HANDLER.lock() = handler;
+}
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    print!(".");
+    TIMER_INTERRUPT_HANDLER.lock()(TIMER_INTERRUPT_COUNTER.load(Ordering::Relaxed));
+    TIMER_INTERRUPT_COUNTER.fetch_add(1, Ordering::Relaxed);
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
