@@ -2,6 +2,7 @@ use core::fmt;
 
 use lazy_static::lazy_static;
 use spin::Mutex;
+use uart_16550::SerialPort;
 use vga::colors::Color16;
 use volatile::Volatile;
 use x86_64::instructions::interrupts;
@@ -45,7 +46,7 @@ impl Writer<'_> {
                 // printable ASCII byte or newline
                 0x20..=0x7e | b'\n' => self.write_byte(byte, color),
                 // not part of printable ASCII range
-                _ => self.write_byte(b' ', color),
+                _ => self.write_byte(b'\xDB', color),
             }
         }
     }
@@ -77,6 +78,12 @@ impl Writer<'_> {
         self.clear_row(24);
         self.column_position = 0;
     }
+    pub fn delete_last(&mut self) {
+        if self.column_position != 0 {
+            self.column_position -= 1;
+            self.set_char(24, self.column_position, b' ', Color16::White as u8);
+        }
+    }
 }
 impl fmt::Write for Writer<'_> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
@@ -95,13 +102,23 @@ macro_rules! println {
     () => ($crate::print!("\n"));
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
+static PRINT_SERIAL: bool = false;
+static SERIAL_PORT: u16 = 0x3F8;
+lazy_static! {
+    static ref SERIAL: Mutex<SerialPort> = Mutex::new(unsafe {
+        let mut port = SerialPort::new(SERIAL_PORT);
+        port.init();
+        port
+    });
+}
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
     interrupts::without_interrupts(|| {
-        // new
-
+        if PRINT_SERIAL {
+            SERIAL.lock().write_fmt(args).unwrap();
+        }
         WRITER.lock().write_fmt(args).unwrap();
     });
 }

@@ -13,12 +13,12 @@ mod allocator;
 mod gdt;
 mod interrupts;
 mod memory;
+mod pit;
 mod writer;
 use ::vga::vga;
-use alloc::{boxed::Box, vec};
 use bootloader::BootInfo;
 use core::panic::PanicInfo;
-use x86_64::{structures::paging::Page, VirtAddr};
+use x86_64::VirtAddr;
 
 use crate::memory::BootInfoFrameAllocator;
 /// This function is called on panic.
@@ -30,19 +30,9 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
-    init();
+    init(boot_info);
     println!("Hello from os code!");
-
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
-    let mut mapper = unsafe { memory::init(phys_mem_offset) };
-    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
-
-    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
-    let x = Box::new(41);
-    println!("heap_value at {:p}", x);
-    let vec = vec![1, 2, 3, 4, 5];
-    println!("vec at {:p}", vec.as_ptr());
-    println!("If you see this text the kernel ran without crashing");
+    println!("Halting kernel...");
     hlt_loop();
 }
 pub fn hlt_loop() -> ! {
@@ -50,14 +40,19 @@ pub fn hlt_loop() -> ! {
         x86_64::instructions::hlt();
     }
 }
-pub fn init() {
+pub fn init(boot_info: &'static BootInfo) {
     {
         let mut vga = vga::VGA.lock();
         vga.set_video_mode(vga::VideoMode::Mode80x25);
     }
     gdt::init();
-
+    pit::set_pit_frequency(u16::MAX);
     interrupts::init_idt();
-    unsafe { interrupts::PICS.lock().initialize() }; // new
-    x86_64::instructions::interrupts::enable(); // new
+    unsafe { interrupts::PICS.lock().initialize() };
+    x86_64::instructions::interrupts::enable();
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let mut mapper = unsafe { memory::init(phys_mem_offset) };
+    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
+
+    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 }
