@@ -74,7 +74,7 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 pub static TIMER_INTERRUPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 lazy_static! {
-    static ref TIMER_INTERRUPT_HANDLER: Mutex<fn(u64) -> ()> = Mutex::new(|i| {});
+    static ref TIMER_INTERRUPT_HANDLER: Mutex<fn(u64) -> ()> = Mutex::new(|_i| {});
 }
 pub fn register_timer_handler(handler: fn(u64) -> ()) {
     *TIMER_INTERRUPT_HANDLER.lock() = handler;
@@ -90,7 +90,6 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
     use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
-    use spin::Mutex;
     use x86_64::instructions::port::Port;
 
     lazy_static! {
