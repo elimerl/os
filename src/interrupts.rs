@@ -1,7 +1,8 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::{gdt, hlt_loop, print, println, writer};
+use crate::{gdt, hlt_loop, println};
 use lazy_static::lazy_static;
+use pc_keyboard::DecodedKey;
 use pic8259::ChainedPics;
 use spin::{self, Mutex};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
@@ -87,9 +88,14 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
     }
 }
-
+lazy_static! {
+    static ref KEYBOARD_INTERRUPT_HANDLER: Mutex<fn(DecodedKey) -> ()> = Mutex::new(|_c| {});
+}
+pub fn register_keyboard_handler(handler: fn(DecodedKey) -> ()) {
+    *KEYBOARD_INTERRUPT_HANDLER.lock() = handler;
+}
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+    use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
     use x86_64::instructions::port::Port;
 
     lazy_static! {
@@ -104,18 +110,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     let scancode: u8 = unsafe { port.read() };
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
-            match key {
-                DecodedKey::Unicode(character) => {
-                    if character == '\x08' {
-                        writer::WRITER.lock().delete_last();
-                    } else {
-                        print!("{}", character);
-                    }
-                }
-                DecodedKey::RawKey(key) => match key {
-                    _ => println!("{:?}", key),
-                },
-            }
+            KEYBOARD_INTERRUPT_HANDLER.lock()(key);
         }
     }
 

@@ -14,14 +14,14 @@ mod gdt;
 mod interrupts;
 mod memory;
 mod pit;
+mod shell;
 mod writer;
-use ::vga::{colors::Color16, vga};
+use ::vga::{colors::Color16, registers::CrtcControllerIndex, vga};
 use bootloader::BootInfo;
 use core::panic::PanicInfo;
-use writer::init_cursor;
 use x86_64::VirtAddr;
 
-use crate::{memory::BootInfoFrameAllocator, writer::set_fg_color};
+use crate::{memory::BootInfoFrameAllocator, shell::init_shell, writer::set_fg_color};
 /// This function is called on panic.
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -34,9 +34,9 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     set_fg_color(Color16::LightGreen);
     println!(
         r"
-d88888b db      d888888b  .d88b.  .d8888. 
-88'     88        `88'   .8P  Y8. 88'  YP 
-88ooooo 88         88    88    88 `8bo.   
+d88888b db      d888888b          .d8888. 
+88'     88        `88'    .d88b.  88'  YP 
+88ooooo 88         88    .8P  Y8. `8bo.   
 88~~~~~ 88         88    88    88   `Y8b. 
 88.     88booo.   .88.   `8b  d8' db   8D 
 Y88888P Y88888P Y888888P  `Y88P'  `8888Y' 
@@ -46,6 +46,8 @@ Y88888P Y88888P Y888888P  `Y88P'  `8888Y'
     println!("Initializing core...");
     init(boot_info);
     println!("Initialized!");
+    println!("Starting shell...");
+    init_shell();
     hlt_loop();
 }
 pub fn hlt_loop() -> ! {
@@ -68,5 +70,17 @@ pub fn init(boot_info: &'static BootInfo) {
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
-    init_cursor();
+    // disable text mode cursor
+    {
+        let mut vga = vga::VGA.lock();
+        let emulation_mode = vga.get_emulation_mode();
+        let cursor_start = vga
+            .crtc_controller_registers
+            .read(emulation_mode, CrtcControllerIndex::TextCursorStart);
+        vga.crtc_controller_registers.write(
+            emulation_mode,
+            CrtcControllerIndex::TextCursorStart,
+            cursor_start | 0x20,
+        );
+    }
 }
